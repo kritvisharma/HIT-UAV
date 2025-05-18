@@ -6,7 +6,7 @@ import time
 import glob
 from ultralytics import YOLO
 import numpy as np 
-from supervision.tracker.byte_tracker import ByteTrack
+from supervision.tracker.byte_tracker.core import ByteTrack
 
 
 
@@ -182,18 +182,21 @@ while True: #runs for each frame
     detections = results[0] #access the bounding box cordinates 
 
     detections_list=[]
-    for i in range(len(detections)): #loop for every object detected in the single frame
-        #results use ultralytics (YOLO) and are in tensor form, need to be converted back to array 
-        xyxy_tensor = detections[i].xyxy.cpu() #access tensor form of cordinates in CPU
-        xyxy= xyxy_tensor.numpy().squeeze() #convert to numpy array
-        xmin,ymin,xmax,ymax = xyxy.astype(int)
+    boxes = detections.boxes
+    if boxes is not None and len(boxes) > 0:
+        xyxys = boxes.xyxy.cpu().numpy()        # (N, 4) array of [xmin, ymin, xmax, ymax]
+        confidences = boxes.conf.cpu().numpy()  # (N,) array
+        class_ids = boxes.cls.cpu().numpy().astype(int)  # (N,) array
 
-        class_id = int(detections[i].cls.item())
-        classname = labels[class_id]
-        confidence = float(detections[i].conf.item())
-
-        if(confidence>0.5):
-            detections_list.append([xmin, ymin, xmax, ymax, confidence])
+        for box, confidence, class_id in zip(xyxys, confidences, class_ids):
+            xmin, ymin, xmax, ymax = box.astype(int)
+            classname = labels[class_id]
+            if confidence > float(min_thresh):
+                detections_list.append([xmin, ymin, xmax, ymax, confidence])
+    else:
+        xyxys = []
+        confidences = []
+        class_ids = []
 
     if (detections_list):
         detections_array = np.array(detections_list)
