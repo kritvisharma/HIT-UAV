@@ -6,6 +6,7 @@ import time
 import glob
 from ultralytics import YOLO
 import numpy as np 
+import supervision as sv
 from supervision.tracker.byte_tracker.core import ByteTrack
 
 
@@ -179,38 +180,15 @@ while True: #runs for each frame
 
     #inference on each frame
     results = model(frame, verbose=False) #results composed of bounding boxes, confidence scores, class ids
-    detections = results[0] #access the bounding box cordinates 
+    #detections = results[0] #access the bounding box cordinates 
 
-    detections_list=[]
-    boxes = detections.boxes
-    if boxes is not None and len(boxes) > 0:
-        xyxys = boxes.xyxy.cpu().numpy()        # (N, 4) array of [xmin, ymin, xmax, ymax]
-        confidences = boxes.conf.cpu().numpy()  # (N,) array
-        class_ids = boxes.cls.cpu().numpy().astype(int)  # (N,) array
+    detections = sv.Detections.from_ultralytics(results[0])
+    tracked_detections = tracker.update_with_detections(detections)
 
-        for box, confidence, class_id in zip(xyxys, confidences, class_ids):
-            xmin, ymin, xmax, ymax = box.astype(int)
-            classname = labels[class_id]
-            if confidence > float(min_thresh):
-                detections_list.append([xmin, ymin, xmax, ymax, confidence])
-    else:
-        xyxys = []
-        confidences = []
-        class_ids = []
-
-    if (detections_list):
-        detections_array = np.array(detections_list)
-        tracked_objects= tracker.update(detections_array)
-    else:
-        tracked_objects= np.empty((0, 5))
-
-    for obj in tracked_objects:
-        xmin, ymin, xmax, ymax, obj_id = map(int, obj[:5])
-
-        color= bbox_colors[class_id%10]
-        cv2.rectangle(frame, (xmin,ymin),(xmax,ymax), color,2)
-        
-        label = f'{classname}: {int (confidence*100)}%'
+    for xyxy, _, confidence, class_id, tracker_id , _ in tracked_detections:
+        xmin, ymin, xmax, ymax = map(int, xyxy)
+        color = bbox_colors[tracker_id % 10]  # Use tracker_id for color
+        label = f"ID:{tracker_id} {labels[class_id]}: {confidence:.2f}"
         labelSize, baseLine = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
         label_ymin = max(ymin, labelSize[1] + 10) # Make sure not to draw label too close to top of window
         cv2.rectangle(frame, (xmin, label_ymin-labelSize[1]-10), (xmin+labelSize[0], label_ymin+baseLine-10), color, cv2.FILLED) # Draw white box to put label text in
@@ -220,7 +198,7 @@ while True: #runs for each frame
     if source_type=='video' or source_type=='usb' or source_type=='picamera':
         cv2.putText(frame, f'FPS: {avg_frame_rate:0.2f}', (10,20), cv2.FONT_HERSHEY_SIMPLEX, .7, (0,255,255), 2)
 
-    cv2.pimshow('YOLO Detection results', frame)
+    cv2.imshow('YOLO Detection results', frame)
     if record: recorder.write(frame)
 
 
