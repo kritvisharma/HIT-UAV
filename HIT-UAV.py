@@ -189,10 +189,15 @@ while True: #runs for each frame
         xmin, ymin, xmax, ymax = map(int, xyxy)
         color = bbox_colors[tracker_id % 10]  # Use tracker_id for color
         label = f"ID:{tracker_id} {labels[class_id]}: {confidence:.2f}"
-        labelSize, baseLine = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+
+        labelSize, baseLine = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1) #labelSize = (width,height) in pixels
         label_ymin = max(ymin, labelSize[1] + 10) # Make sure not to draw label too close to top of window
+
         cv2.rectangle(frame, (xmin, label_ymin-labelSize[1]-10), (xmin+labelSize[0], label_ymin+baseLine-10), color, cv2.FILLED) # Draw white box to put label text in
+        # Draw the bounding box around the detected object
+        cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), color, 1) #draw bounding box
         cv2.putText(frame, label, (xmin, label_ymin-7), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1) # Draw label text
+        
 
     #display detection results 
     if source_type=='video' or source_type=='usb' or source_type=='picamera':
