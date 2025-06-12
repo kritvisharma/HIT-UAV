@@ -8,8 +8,7 @@ from ultralytics import YOLO
 import numpy as np 
 import supervision as sv
 from supervision.tracker.byte_tracker.core import ByteTrack
-
-
+from pymavlink import mavutil
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model', help = 'Path to your YOLO model', required=True )
@@ -122,11 +121,39 @@ fps_avg_len=200
 img_count=0
 vid_count=0
 tracker = ByteTrack(
-    track_activation_threshold=0.5,
+    track_activation_threshold= float(min_thresh),
     lost_track_buffer=30,
     frame_rate=20  # Match your camera's FPS
 )
 
+master = mavutil.mavlink_connection('/dev/ttyUSB0', baud=57600)  #check port later
+master.wait_heartbeat()
+print("Connected to flight controller!")
+
+master.mav.command_long_send(
+    master.target_system, master.target_component,
+    mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0)
+
+master.set_mode_apm('GUIDED')
+print("Armed and in GUIDED mode")
+
+# Control parameters
+k = 0.01  # Proportional gain - tune this value
+selected_id= None
+tracked_detections = []
+
+def mouse_callback(event, x, y, flags, param):
+    global selected_id, tracked_detections
+    if event == cv2.EVENT_LBUTTONDOWN:
+        for xyxy, _, _, _, tracker_id, _ in tracked_detections:
+            xmin, ymin, xmax, ymax = map(int, xyxy)
+            if xmin <= x <= xmax and ymin <= y <= ymax:
+                selected_id = tracker_id
+                print(f"Selected object ID: {selected_id}")
+                break
+
+cv2.namedWindow('YOLO Detection results')
+cv2.setMouseCallback('YOLO Detection results', mouse_callback)
 
 while True: #runs for each frame 
     t_start = time.perf_counter()
@@ -136,10 +163,20 @@ while True: #runs for each frame
     if source_type == 'folder':
         if img_count < len(imgs_list):
             frame = cv2.imread(imgs_list[img_count])
-            img_count += 1
+            img_count= img_count+1
+            tracker = ByteTrack(
+            track_activation_threshold= float(min_thresh),
+            lost_track_buffer=30,
+            frame_rate=20  # Match your camera's FPS
+            )
+            
+            
+        else:
+            print("All images have been processed")
+            break
 
         # Handle videos (separate loop for videos, once all images are processed)
-        elif vid_count < len(vids_list):
+        if vid_count < len(vids_list):
             cap = cv2.VideoCapture(vids_list[vid_count])
             ret, frame = cap.read()
             if not ret:
@@ -152,7 +189,7 @@ while True: #runs for each frame
             print("All images have been processed")
             sys.exit(0)
         frame = cv2.imread(imgs_list[img_count])
-        img_count= img_count+1
+        
 
 
     elif source_type=='video':
@@ -188,16 +225,50 @@ while True: #runs for each frame
     for xyxy, _, confidence, class_id, tracker_id , _ in tracked_detections:
         xmin, ymin, xmax, ymax = map(int, xyxy)
         color = bbox_colors[tracker_id % 10]  # Use tracker_id for color
-        label = f"ID:{tracker_id} {labels[class_id]}: {confidence:.2f}"
-
-        labelSize, baseLine = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1) #labelSize = (width,height) in pixels
-        label_ymin = max(ymin, labelSize[1] + 10) # Make sure not to draw label too close to top of window
-
-        cv2.rectangle(frame, (xmin, label_ymin-labelSize[1]-10), (xmin+labelSize[0], label_ymin+baseLine-10), color, cv2.FILLED) # Draw white box to put label text in
-        # Draw the bounding box around the detected object
-        cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), color, 1) #draw bounding box
-        cv2.putText(frame, label, (xmin, label_ymin-7), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1) # Draw label text
         
+        label = f"ID:{tracker_id} {labels[class_id]}: {confidence:.2f}"
+        labelSize, baseLine = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1) #labelSize = (width,height) in pixels
+        label_width, label_height = labelSize
+
+        if xmin+ label_width > frame.shape[1]:
+            label_xmin = frame.shape[1]-label_width-1   
+        else: 
+            label_xmin = xmin
+        
+        label_xmax = label_xmin + label_width
+        
+        if ymin - label_height - 10 <0:
+            label_ymin = ymax + 10
+        else:
+            label_ymin = ymin- label_height-10
+
+        cv2.rectangle(frame, (label_xmin, label_ymin), (label_xmax, label_ymin + label_height + baseLine), color, cv2.FILLED) #draw label box
+        cv2.putText(frame, label, (label_xmin, label_ymin + label_height), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+
+        cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), color, 1) #draw bounding box for object
+
+
+        if tracker_id==selected_id:
+            obj_cx= (xmin+xmax)//2
+            obj_cy = (ymin+ymax)//2
+
+            frame_center_x = frame.shape[1] // 2
+            frame_center_y = frame.shape // 2
+            
+            err_x = obj_cx - frame_center_x
+            err_y = obj_cy - frame_center_y
+            
+            
+            vx = -err_y * k  # Forward/backward
+            vy = -err_x * k  # Left/right
+            vz = 0  
+
+            master.mav.set_position_target_local_ned_send(
+                0, master.target_system, master.target_component,
+                mavutil.mavlink.MAV_FRAME_BODY_NED, 0b0000111111000111,
+                0, 0, 0, vx, vy, vz, 0, 0, 0, 0, 0)
+            
+            print(f"Following ID:{tracker_id} - Error: ({err_x}, {err_y}) - Velocity: ({vx:.3f}, {vy:.3f})")
 
     #display detection results 
     if source_type=='video' or source_type=='usb' or source_type=='picamera':
@@ -205,8 +276,6 @@ while True: #runs for each frame
 
     cv2.imshow('YOLO Detection results', frame)
     if record: recorder.write(frame)
-
-
     #wait for a user to press a key to go to next image or video 
     if source_type=='image' or source_type=='folder':
         key = cv2.waitKey()
@@ -220,7 +289,6 @@ while True: #runs for each frame
     elif key == ord('p') or key == ord('P'): # Press 'p' to save a picture of results on this frame
         cv2.imwrite('capture.png',frame)
 
-
     #calculate fps for this frame 
 
     t_stop = time.perf_counter() # the single frame's time is stopped
@@ -233,6 +301,7 @@ while True: #runs for each frame
         frame_rate_buffer.append(frame_rate_calc)
     
     avg_frame_rate = np.mean(frame_rate_buffer)
+    
 
 
 print(f'Average pipeline FPS: {avg_frame_rate:.2f}')
