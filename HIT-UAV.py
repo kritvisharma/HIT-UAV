@@ -56,7 +56,6 @@ elif 'usb' in src:
     usb_idx= int(src[3:])
 elif 'picamera' in src:
     source_type= 'picamera'
-    picam_idx = int(src[8:])
 else:
     print(f'Input {src} is invalid. Please try again')
     sys.exit(0)
@@ -123,7 +122,7 @@ vid_count=0
 tracker = ByteTrack(
     track_activation_threshold= float(min_thresh),
     lost_track_buffer=30,
-    frame_rate=20  # Match your camera's FPS
+    frame_rate=20 
 )
 
 master = mavutil.mavlink_connection('/dev/ttyUSB0', baud=57600)  #check port later
@@ -137,8 +136,8 @@ master.mav.command_long_send(
 master.set_mode_apm('GUIDED')
 print("Armed and in GUIDED mode")
 
-# Control parameters
-k = 0.01  # Proportional gain - tune this value
+
+k = 0.01  # Proportional gain (tune later)
 selected_id= None
 tracked_detections = []
 
@@ -276,7 +275,7 @@ while True: #runs for each frame
 
     cv2.imshow('YOLO Detection results', frame)
     if record: recorder.write(frame)
-    #wait for a user to press a key to go to next image or video 
+     
     if source_type=='image' or source_type=='folder':
         key = cv2.waitKey()
     elif source_type == 'video' or source_type == 'usb' or source_type == 'picamera':
