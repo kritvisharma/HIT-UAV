@@ -125,16 +125,27 @@ tracker = ByteTrack(
     frame_rate=20 
 )
 
-master = mavutil.mavlink_connection('/dev/ttyUSB0', baud=57600)  #check port later
-master.wait_heartbeat()
-print("Connected to flight controller!")
+# master = mavutil.mavlink_connection('/dev/ttyACM0', baud=57600)  #check port later
+# master.wait_heartbeat()
+# print("Connected to flight controller!")
 
-master.mav.command_long_send(
-    master.target_system, master.target_component,
-    mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0)
+# master.set_mode_apm('GUIDED')
+# print("Armed and in GUIDED mode")
 
-master.set_mode_apm('GUIDED')
-print("Armed and in GUIDED mode")
+# master.mav.command_long_send(
+#     master.target_system, master.target_component,
+#     mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0)
+# msg =  master.recv_match(type = "COMMAND_ACK", blocking=True)
+#print (msg)
+
+
+# master.mav.command_long_send(
+#     master.target_system, master.target_component,
+#     mavutil.mavlink.MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, 0, 0)
+# msg =  master.recv_match(type = "COMMAND_ACK", blocking=True)
+#print (msg)
+
+
 
 
 k = 0.01  # Proportional gain (tune later)
@@ -252,7 +263,7 @@ while True: #runs for each frame
             obj_cy = (ymin+ymax)//2
 
             frame_center_x = frame.shape[1] // 2
-            frame_center_y = frame.shape // 2
+            frame_center_y = frame.shape[0]// 2
             
             err_x = obj_cx - frame_center_x
             err_y = obj_cy - frame_center_y
@@ -264,7 +275,7 @@ while True: #runs for each frame
 
             master.mav.set_position_target_local_ned_send(
                 0, master.target_system, master.target_component,
-                mavutil.mavlink.MAV_FRAME_BODY_NED, 0b0000111111000111,
+                mavutil.mavlink.MAV_FRAME_BODY_NED, int(0b110111000111),
                 0, 0, 0, vx, vy, vz, 0, 0, 0, 0, 0)
             
             print(f"Following ID:{tracker_id} - Error: ({err_x}, {err_y}) - Velocity: ({vx:.3f}, {vy:.3f})")
